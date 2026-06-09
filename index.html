@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mapa do Tesouro</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #f4e4c1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            font-family: 'Georgia', serif;
+        }
+        h1 {
+            color: #5c3d1e;
+            margin-bottom: 10px;
+            font-size: 1.5rem;
+        }
+        p {
+            color: #7a5230;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+        canvas {
+            border: 3px solid #5c3d1e;
+            border-radius: 8px;
+            background: #fdf5e6;
+            cursor: crosshair;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body>
+    <h1>🗺️ Mapa do Tesouro</h1>
+    <p>Clique no canvas para criar caminhos com curvas e loops</p>
+    <canvas id="canvas" width="900" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let lastPoint = null;
+        const points = [];
+        const paths = [];
+
+        // Draw a dot at a point
+        function drawPoint(x, y) {
+            ctx.beginPath();
+            ctx.arc(x, y, 5, 0, Math.PI * 2);
+            ctx.fillStyle = '#8b0000';
+            ctx.fill();
+            ctx.strokeStyle = '#5c3d1e';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+        }
+
+        // Generate a curvy path with occasional loops between two points
+        function generateCurvyPath(start, end) {
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            // Number of segments based on distance
+            const numSegments = Math.max(3, Math.floor(dist / 80));
+            const segmentPoints = [];
+
+            for (let i = 0; i <= numSegments; i++) {
+                const t = i / numSegments;
+                const baseX = start.x + dx * t;
+                const baseY = start.y + dy * t;
+
+                // Add randomness perpendicular to the path
+                const perpX = -dy / dist;
+                const perpY = dx / dist;
+                const wobble = (Math.random() - 0.5) * dist * 0.3;
+
+                if (i === 0 || i === numSegments) {
+                    segmentPoints.push({ x: baseX, y: baseY });
+                } else {
+                    segmentPoints.push({
+                        x: baseX + perpX * wobble,
+                        y: baseY + perpY * wobble
+                    });
+                }
+            }
+
+            // Randomly insert a loop
+            if (dist > 120 && Math.random() > 0.4) {
+                const loopIndex = Math.floor(1 + Math.random() * (numSegments - 2));
+                const loopCenter = segmentPoints[loopIndex];
+                const loopRadius = 15 + Math.random() * 25;
+                const loopPoints = [];
+
+                for (let a = 0; a <= Math.PI * 2; a += Math.PI / 6) {
+                    loopPoints.push({
+                        x: loopCenter.x + Math.cos(a) * loopRadius,
+                        y: loopCenter.y + Math.sin(a) * loopRadius
+                    });
+                }
+
+                segmentPoints.splice(loopIndex, 0, ...loopPoints);
+            }
+
+            return segmentPoints;
+        }
+
+        // Draw a dashed curvy path
+        function drawPath(pathPoints) {
+            if (pathPoints.length < 2) return;
+
+            ctx.beginPath();
+            ctx.setLineDash([8, 5]);
+            ctx.strokeStyle = '#5c3d1e';
+            ctx.lineWidth = 2.5;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            ctx.moveTo(pathPoints[0].x, pathPoints[0].y);
+
+            // Use quadratic curves through the points for smoothness
+            for (let i = 1; i < pathPoints.length - 1; i++) {
+                const xc = (pathPoints[i].x + pathPoints[i + 1].x) / 2;
+                const yc = (pathPoints[i].y + pathPoints[i + 1].y) / 2;
+                ctx.quadraticCurveTo(pathPoints[i].x, pathPoints[i].y, xc, yc);
+            }
+
+            // Last point
+            const last = pathPoints[pathPoints.length - 1];
+            const secondLast = pathPoints[pathPoints.length - 2];
+            ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y);
+
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // Redraw everything
+        function redraw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw all paths
+            for (const path of paths) {
+                drawPath(path);
+            }
+
+            // Draw all points
+            for (const point of points) {
+                drawPoint(point.x, point.y);
+            }
+        }
+
+        // Animate drawing a path
+        function animatePath(pathPoints, callback) {
+            let currentIndex = 0;
+            const speed = 3; // points per frame
+
+            function frame() {
+                currentIndex = Math.min(currentIndex + speed, pathPoints.length);
+
+                redraw();
+
+                // Draw the animating path portion
+                const partial = pathPoints.slice(0, currentIndex);
+                if (partial.length >= 2) {
+                    ctx.beginPath();
+                    ctx.setLineDash([8, 5]);
+                    ctx.strokeStyle = '#5c3d1e';
+                    ctx.lineWidth = 2.5;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+
+                    ctx.moveTo(partial[0].x, partial[0].y);
+                    for (let i = 1; i < partial.length - 1; i++) {
+                        const xc = (partial[i].x + partial[i + 1].x) / 2;
+                        const yc = (partial[i].y + partial[i + 1].y) / 2;
+                        ctx.quadraticCurveTo(partial[i].x, partial[i].y, xc, yc);
+                    }
+                    const last = partial[partial.length - 1];
+                    const secondLast = partial[partial.length - 2];
+                    ctx.quadraticCurveTo(secondLast.x, secondLast.y, last.x, last.y);
+
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+
+                if (currentIndex < pathPoints.length) {
+                    requestAnimationFrame(frame);
+                } else {
+                    if (callback) callback();
+                }
+            }
+
+            requestAnimationFrame(frame);
+        }
+
+        let isAnimating = false;
+
+        canvas.addEventListener('click', (e) => {
+            if (isAnimating) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            const newPoint = { x, y };
+            points.push(newPoint);
+
+            if (lastPoint) {
+                const pathPoints = generateCurvyPath(lastPoint, newPoint);
+                isAnimating = true;
+
+                animatePath(pathPoints, () => {
+                    paths.push(pathPoints);
+                    isAnimating = false;
+                    redraw();
+                });
+            } else {
+                drawPoint(x, y);
+            }
+
+            lastPoint = newPoint;
+        });
+    </script>
+</body>
+</html>
